@@ -1,0 +1,129 @@
+library(ggplot2)
+library(e1071)
+library(dplyr)
+
+data <- read.csv("https://raw.githubusercontent.com/dat-analytics/data_access_2_t3_2023/main/z5310951_z5310951-Assessment1Data.csv", encoding="UTF-8")
+head(data)
+
+data$Vehicle_Condition <- factor(data$Vehicle_Condition)
+data$Festival <- factor(data$Festival)
+data$Multiple_Deliveries <- factor(data$Multiple_Deliveries)
+
+colour = "#99E1D9"
+
+#Distribution of Delivery Duration
+summary(data$Delivery_Duration)
+skewness(data$Delivery_Duration)
+kurtosis(data$Delivery_Duration) + 3 #Calculates Excess kurtosis
+
+data %>%
+  group_by(Multiple_Deliveries) %>%
+  summarize(
+    Avg_Delivery_Duration = mean(Delivery_Duration, na.rm = TRUE),
+    Pct_Over_40_Minutes = mean(Delivery_Duration > 40, na.rm = TRUE) * 100
+  )
+
+#Delivery Duration by Rating
+#Appendix 1
+#Avg Delivery Driver Ratings Graph
+averages <- data %>%
+  group_by(Delivery_Person_Ratings) %>%
+  summarize(Avg_Delivery_Duration = mean(Delivery_Duration))
+
+ggplot(averages, aes(x = Delivery_Person_Ratings, y = Avg_Delivery_Duration)) +
+  geom_line() +
+  geom_point() +
+  labs(x = "Delivery Driver Ratings", y = "Average Delivery Duration") +
+  theme_minimal()
+
+data %>%
+  filter(Delivery_Person_Ratings >= 4.5) %>%
+  summarise(
+    mean(Delivery_Duration)
+  )
+
+data %>%
+  filter(Delivery_Person_Ratings < 4.5) %>%
+  summarise(
+    mean(Delivery_Duration)
+  )
+
+
+#Average Delivery Duration per rating
+#Graph 1
+averages <- data %>%
+  group_by(Delivery_Person_Ratings) %>%
+  summarize(Avg_Delivery_Duration = mean(Delivery_Duration))
+
+ggplot(averages, aes(x = Delivery_Person_Ratings, y = Avg_Delivery_Duration)) +
+  geom_line() +
+  geom_point() +
+  labs(x = "Delivery Person Ratings", y = "Average Delivery Duration") +
+  theme_minimal()
+
+
+#Appendix 2
+#Tenure Vs Speed:
+ggplot(data, aes(x = factor(Delivery_Person_Tenure), y = Delivery_Duration)) +
+  geom_boxplot(fill = colour) +
+  labs(x = "Driver Tenure", y = "Delivery Duration") + 
+  ggtitle("Box Plot of Driver Tenure vs Delivery Duration") + 
+  theme_bw()
+
+#Graph 3
+#Put into bins - 6 months, 12months, 18months, 18+
+breaks <- c(0, 6, 12, 18, Inf)
+labels <- c("1-6", "7-12", "13-18", "19+")
+data$Tenure_Category <- cut(data$Delivery_Person_Tenure, breaks = breaks, labels = labels, right = FALSE)
+
+ggplot(data, aes(x = Tenure_Category, y = Delivery_Duration)) +
+  geom_boxplot(fill = colour) +
+  labs(x = "Driver Tenure", y = "Delivery Duration") + 
+  ggtitle("Box Plot of Driver Tenure vs Delivery Duration") + 
+  theme_bw()
+
+data %>%
+  group_by(Tenure_Category) %>%
+  summarise(
+    avg = mean(Delivery_Duration),
+    minimum = min(Delivery_Duration),
+    maximum = max(Delivery_Duration),
+    median = median(Delivery_Duration)
+  )
+
+
+#Graph 1
+#Prior Deliveries vs Delivery Duration
+ggplot(data, aes(x = Multiple_Deliveries, y = Delivery_Duration)) +
+  geom_boxplot(fill = colour) +
+  labs(x = "Number of Prior Deliveries", y = "Delivery Duration") + 
+  ggtitle("#No. Prior Deliveries vs Delivery Duration") +
+  theme_bw()
+
+
+
+#Vehicle Condition vs Delivery Duration
+ggplot(data, aes(x = Vehicle_Condition, y = Delivery_Duration)) +
+  geom_boxplot(fill = colour) +
+  theme_bw() +
+  labs(x = "Vehicle Condition", y = "Delivery Duration") +
+  ggtitle("Vehicle Condition vs Delivery Duration")
+
+table(data$Vehicle_Condition)
+
+aggregate(Delivery_Duration ~ Vehicle_Condition, data = data, FUN = mean)
+table(data$Vehicle_Condition[data$Delivery_Duration > 39])
+table(data$Vehicle_Condition[data$Delivery_Duration > 49])
+
+
+#Driver Age vs Delivery Duration
+ggplot(data, aes(x = factor(Delivery_Person_Age), y = Delivery_Duration)) +
+  geom_boxplot(fill = colour) +
+  labs(x = "Age", y = "Delivery Duration") + 
+  ggtitle("Age vs Delivery Duration") +
+  theme_bw()
+
+
+
+
+
