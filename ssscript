@@ -1,0 +1,39 @@
+Script
+ 
+First to give some background:
+ 
+Slide 2:
+The Financial Intelligence Unit undertake regular monitoring of money laundering techniques and must frequently update their database of red flags with emerging and new techniques every 6 months. In addition, they have a requirement to continually validate this information but the manual nature of the task means that in reality they only have the capacity to do this around once per month.
+They must review a variety of documents, which can range anywhere from 10s of pages to 1000s of pages.
+From each document, a list of red flags that are indicators of fraud are extracted. They then add any new red flags to their database of red flags.
+ 
+Currently this process is completely manual in nature. In addition to being time consuming, it also has other challenges associated with it:
+ 
+There’s the risk that not all relevant red flags will be extracted
+The process is not standardised as different analysts approach the task in different ways which can lead to varying results
+The manual approach means that continual monitoring and validation of the red flags database cannot feasibly be undertaken
+ 
+To help overcome these challenges we have tested the usage of AI tools to automate the review and extraction of red flags from the source documents. AI is also used to compare the extracted information to what currently exists in the database in order to identify the new information.
+ 
+Slide 4:
+I’ll give a brief run-through of the pipeline before the demo:
+First, a pdf document is uploaded, and we separate it into multiple chunks of equal length.
+Then, we put each chunk into the AI, and ask it to find money laundering red flags.
+Once we have the output for each of the sections, we then combine all the red flag lists together and make another request to the AI. This time, we also pass in the Financial Intelligence Unit’s existing database of red flags and we ask it to extract the red flags not already found in their list. We call this new output the “delta” and it is what the AI has identified as new red flag information to be added to the database.
+ 
+Switch to interface.
+So here, we have an interface where we can demonstrate the product.
+** Remove this ? ** The textbox is what I use to determine how to split the document into chunks. Leaving it blank will just use default parameters I have setup.
+*Upload Document*
+The document has been split into *x* chunks, and the AI is now processing the document.
+This process can take multiple minutes, so with the interest of time, lets switch to the output I ran earlier
+ 
+Switch to finished interface.
+Here we can see that the document has been passed through and 2 lists have been outputted.
+The first list is a collection of all the red flags extracted from the document.
+The second list is the delta, a consolidated list with no overlap with the financial intelligence units list.
+ 
+Switch to a word doc
+The results can also be outputted as a downloadable word document if desired.
+ 
+Thankyou.
