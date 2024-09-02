@@ -1,59 +1,40 @@
-This is my current code: from llama_index.core import Document, VectorStoreIndex
+Aryan
+This is a photograph of a person holding a baby. The baby appears to be wearing a white outfit with a pattern that could include pink details, suggesting it might be a dress or a baby romper. The baby's legs are bare, and the feet are visible. The person holding the baby is wearing a horizontally striped garment with dark and lighter stripes, which could be a shirt or a top. The person's left arm is visible, and they are wearing a gold bracelet and a ring on their left hand. The background of the image is not entirely clear, but it seems to be an indoor environment with a patterned backdrop, possibly a wall or a curtain with geometric shapes and different shades. The top right corner of the image shows a partial view of another individual's face, but it is not the focus of the image. The word "Crop" is visible at the top, indicating that the image may have been edited or is in the process of being edited.
 
-documents = [
-    Document(
-        text=row['text'],
-        metadata={'document_name': row['metadata'], 'region': row['region']},
-        embedding=row['embedding']
-    )
-    for _, row in embeddings_df.iterrows()
-]
+Ben
+In the image, there is a baby wearing a light-colored beanie with a visible emblem on the front. The baby is also dressed in a light-colored outfit that appears to be a soft, plush material, which could be a onesie or pajamas. The baby's right arm is slightly raised and visible to the side. The background is indistinct, but there seems to be a dark area that could be a shadow or an object, and some white speckles scattered across the dark area, which could be part of the background or perhaps some artifact on the photo itself. The image has a warm tone, suggesting indoor lighting or a filter effect. The photo's edges show signs of wear or aging, indicating that it might be a physical photograph that has been scanned or photographed for digital use.
 
-index = VectorStoreIndex.from_documents(documents)... I am using llama index - im getting the error that says 
-Could not load OpenAI embedding model. If you intended to use OpenAI, please check your OPENAI_API_KEY.
-Original error:
-No API key found for OpenAI.
-Please set either the OPENAI_API_KEY environment variable or openai.api_key prior to initialization.
-API keys can be found or created at https://platform.openai.com/account/api-keys
- - however i have already embedded by documents - how can i put them into an index without needing to embeded them again?
+Bridgette
+This is a photograph of a child wearing a light-colored hat with a red flower and a brown knitted detail. The child is also dressed in a purple knitted cardigan over a darker shirt. The background suggests an indoor setting with a white surface that has a floral pattern, possibly a bed or a couch. There are some yellowish spots on the surface, which could be due to age-related discoloration of the photograph or the original scene. The image has a warm, nostalgic feel, typical of personal photographs from past decades. The photograph itself shows signs of wear and age, with some color fading and minor blemishes.
 
-from llama_index.core import Document, VectorStoreIndex
-from llama_index.core.embeddings import BaseEmbedding
-from llama_index.core.schema import MetadataMode
-from llama_index.core.node_parser import SimpleNodeParser
-from typing import List
+Jennifer
+In this image, there is a toddler standing outdoors. The child appears to be unclothed and is standing on what looks like a sandy or dusty surface, with their body facing the camera. The child's arms are raised, with hands near the chin, and the fingers are splayed. The posture suggests curiosity or playfulness.
 
-class PrecomputedEmbedding(BaseEmbedding):
-    def __init__(self):
-        super().__init__()
+The child has dark hair, and there's a hint of movement in the hair, which could be due to a breeze. Behind the child, there is a wooden fence that seems to be in a backyard or garden setting. The lighting in the photo indicates it might be a sunny day, as there are strong shadows cast on the ground and the child's body, which also highlights the texture of the skin and the dust or sand particles in the air.
 
-    def embed_query(self, query: str) -> List[float]:
-        raise NotImplementedError("This method is not used for pre-embedded documents")
+The overall tone of the image is warm, with a vintage or retro feel, possibly due to the color grading or the age of the photograph. The focus is on the child, with the background slightly out of focus, drawing the viewer's attention to the child's actions and posture.
 
-    def embed_documents(self, documents: List[Document]) -> List[List[float]]:
-        return [doc.embedding for doc in documents]
+Jenny
+This image features a baby sitting upright on a surface covered with a patterned sheet. The baby is wearing a fluffy, pink, sleeveless dress with layers of tulle fabric, giving it a tutu-like appearance. The dress has a gathered neckline, and the color is a soft, pastel pink. The baby's arms are visible, and one hand appears to be resting on the leg. The baby's legs are bare and slightly bent at the knees, with the feet touching the surface.
 
-# Create documents with pre-computed embeddings
-documents = [
-    Document(
-        text=row['text'],
-        metadata={'document_name': row['metadata'], 'region': row['region']},
-        embedding=row['embedding']
-    )
-    for _, row in embeddings_df.iterrows()
-]
+On top of the baby's head, there is a small tuft of hair styled into an upright ponytail, secured with a hair accessory that is not clearly visible due to the angle of the photo. The background is mostly white with some soft, pastel-colored illustrations that resemble children's drawings or characters, but the details of these illustrations are not distinct. The overall impression is of a gentle and playful setting, suitable for a baby's portrait.
 
-# Create a custom embedding model
-embed_model = PrecomputedEmbedding()
+Jermaine
+In this image, there is a young child sitting on a carpeted floor. The child is wearing a long-sleeved shirt with horizontal stripes in shades of gray and blue, and the number "4" is visible on the upper left side of the shirt. The child also has on light-colored pants that appear to be khaki. The child's hair is dark and styled upward, giving it a slightly spiky appearance.
 
-# Create the index with pre-embedded documents
-index = VectorStoreIndex.from_documents(
-    documents,
-    embed_model=embed_model,
-    show_progress=True
-)
+The child is holding a red ball with some writing on it, which is not entirely clear in the image. The ball seems to be made of a soft material, possibly foam, which is suitable for a child's play. The child's bare feet are visible, and the toes are pointing inward slightly. The child's posture suggests engagement with the ball, possibly in the middle of play. The background is plain and nondescript, providing no additional context or distractions from the subject.
 
-# Now you can use the index for querying
-query_engine = index.as_query_engine()
-response = query_engine.query("Your query here")
-print(response)
+Jordan
+In this image, there is a young child sitting on a bed. The child is wearing a light blue sleeveless top. The bed has a white sheet, and there is a pillow to the left side of the child. The child is holding a book with a blue cover that reads "THE FIRM" by "JOHN GRISHAM." The child's bare feet are visible, resting on the bed. In the background, there is a headboard with a wood pattern and two framed pictures above the headboard, one of which appears to depict a landscape or floral scene. The lighting in the room gives the image a warm tone.
+
+Kristine
+In this image, there is a young child standing on a grassy area. The child is wearing a bright pink sweater with what appears to be a white collar and several decorative elements on the front that resemble hearts or diamonds. The child's pants have a black and white pattern, possibly a geometric or abstract design. On their feet, they are wearing a pair of light-colored shoes, which could be sneakers.
+
+Behind the child, there is a pomegranate tree with several ripe pomegranates hanging from the branches. The tree's leaves are green, indicating it is likely a healthy, well-maintained plant. In the background, there is a structure that appears to be a light-colored shed or garage with a door visible on the right side. The sky is not clearly visible, but the lighting suggests it could be a bright day. The overall setting appears to be a residential garden or backyard.
+
+Shreya
+This is a photograph of a baby being held by an adult. The baby has dark hair and is wearing what appears to be a white garment with a collar, which could be a dress or a shirt. There are small white adornments or hair accessories on the sides of the baby's head, suggesting an attempt to style or decorate the hair. The adult is wearing a garment with a black and gold pattern, but only a portion of the sleeve is visible, making it difficult to discern the type of clothing. The background is a pale wall with a framed picture hanging, but the details of the picture are not clear. The bottom edge of the photo has a white border, indicating that this is a physical photograph, possibly from a printed album or collection.
+
+
+Yasmin
+In this image, I see the top of a baby's head with dark hair. The baby appears to be lying down, as indicated by the angle of the photo and the position of the head. The baby's right hand is visible, with fingers slightly curled, suggesting relaxation or the beginning of a grasp. The baby is wearing a white garment, which could be a onesie or pyjamas, a common type of clothing for infants. The background is not entirely clear, but it seems to be a dark-coloured fabric, possibly a piece of furniture or a blanket. The overall impression is that of a peaceful, resting baby, although the face is not visible in the photo.
