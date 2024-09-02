@@ -1,30 +1,18 @@
-Slide 2
-Welcome to our AI policy chatbot demo.
-To first give some context, a policy chatbot is a tool that allows users to ask specific Macquarie policy related questions.
+This is my current code: from llama_index.core import Document, VectorStoreIndex
 
-The chatbot knows information found from various documents, including documents found on Macnet and Confluence.
+documents = [
+    Document(
+        text=row['text'],
+        metadata={'document_name': row['metadata'], 'region': row['region']},
+        embedding=row['embedding']
+    )
+    for _, row in embeddings_df.iterrows()
+]
 
-The chatbot can quickly search across multiple documents and data sources, ensuring comprehensive results. The search finds the relevant document sections and returns an AI generated answer to the question.
-
-Slide 3
-The benefits are plenty:
-To start with, employees struggle to locate and understand various policies without proper guidance and support.
-In addition, it’s difficult for policy owners to provide timely assistance to employees in resolving their policy-related issues.
-Overall, these combine to be a large time save for both consumer and policy owner.
-
-To Video Demo:
--	Start at 15 secs
-
-When a question is put in by the user, it goes through a couple of steps. First, it checks if the question is the same or similar to one of the frequently asked questions in our database. 
-This FAQ list has pre-written answers by the policy owners, which it will reply with if the question is similar enough.
-
-For example, these first two questions were found in our database.
-
-At 1 minute:
-
-If the question is not found in the FAQs, then a search across all policy documents in the database is done. The AI first locates the relevant document section, and then generates an answer based off the section and question.
-
-At 1:24 secs
-Here, we can see that the AI successfully recognised that the answer to the question would be located in the global brand policy document.
-
-Thankyou. 
+index = VectorStoreIndex.from_documents(documents)... I am using llama index - im getting the error that says 
+Could not load OpenAI embedding model. If you intended to use OpenAI, please check your OPENAI_API_KEY.
+Original error:
+No API key found for OpenAI.
+Please set either the OPENAI_API_KEY environment variable or openai.api_key prior to initialization.
+API keys can be found or created at https://platform.openai.com/account/api-keys
+ - however i have already embedded by documents - how can i put them into an index without needing to embeded them again?
