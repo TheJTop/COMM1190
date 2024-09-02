@@ -16,3 +16,44 @@ No API key found for OpenAI.
 Please set either the OPENAI_API_KEY environment variable or openai.api_key prior to initialization.
 API keys can be found or created at https://platform.openai.com/account/api-keys
  - however i have already embedded by documents - how can i put them into an index without needing to embeded them again?
+
+from llama_index.core import Document, VectorStoreIndex
+from llama_index.core.embeddings import BaseEmbedding
+from llama_index.core.schema import MetadataMode
+from llama_index.core.node_parser import SimpleNodeParser
+from typing import List
+
+class PrecomputedEmbedding(BaseEmbedding):
+    def __init__(self):
+        super().__init__()
+
+    def embed_query(self, query: str) -> List[float]:
+        raise NotImplementedError("This method is not used for pre-embedded documents")
+
+    def embed_documents(self, documents: List[Document]) -> List[List[float]]:
+        return [doc.embedding for doc in documents]
+
+# Create documents with pre-computed embeddings
+documents = [
+    Document(
+        text=row['text'],
+        metadata={'document_name': row['metadata'], 'region': row['region']},
+        embedding=row['embedding']
+    )
+    for _, row in embeddings_df.iterrows()
+]
+
+# Create a custom embedding model
+embed_model = PrecomputedEmbedding()
+
+# Create the index with pre-embedded documents
+index = VectorStoreIndex.from_documents(
+    documents,
+    embed_model=embed_model,
+    show_progress=True
+)
+
+# Now you can use the index for querying
+query_engine = index.as_query_engine()
+response = query_engine.query("Your query here")
+print(response)
