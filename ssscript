@@ -1,42 +1,44 @@
-P1
+Hi everyone, my name is Jordan, and I am a part of the Data and AI – Data Science team.
 
+Here I’m showing off a tech spike I did which allows for people to ask questions in natural language on one or multiple databases, and receive an AI generated Answer.
 
-So - AI Agents:
+For those of you who don’t know, a tech spike is a process where we take an idea and see how far we can go in 2 weeks.
 
-So we are familiar with using an AI product, such as AI chat, which we give an instruction in text, and it outputs its result in text format.
+This was done in collaboration with the CRE team, who provided us with this data.
+--------------------------------------------
 
-AI Agents refer to the process by which an AI model can decide on actions to take and execute them to perform a job.
-This is enabled by giving them access to what we call ‘tools.’
+To set the scene:
+The Corporate Real Estate Team manages around 80 offices, with an annual cost base of $650m.
+Additional data insights can lead to greater space utilization – a 1% improvement in space utilization can lead to $2m in savings just in Sydney.
 
-P2
-So, to add a bit more context.
-A tool is an action that the AI Agent can decide to use. The tool defines what an Agentic workflow is capable of, and usually involves some form of retrieving information, or performing some action.
+This AI Agent solution attempts to enable users to generate insights in a dynamic and customizable way using unstructured prompts.
 
-Here, we have some examples – so for example, we can integrate a google search agent, or query a database, or get financial information from yahoo finance and so on.
+Self-service reduces barrier and time to insights, and when fully scaled out can come up with its own insights.
 
-We see that we start with some trigger event or input that initiates the workflow. The LLM (or AI Agent) then decides which tools, if any, it should then use to complete its task. In the process of completing the task, it could select a tool, which then gives it an observation, and then it makes a new judgement given the observation, to then give an output or to make another tool call.
+--------------------------------------------
+Now onto the demo:
 
-An example could be Integrating a chatbot with different tools, which we will soon see in the demo video.
+To build this, I used python and OpenAI’s gpt-4o model.
 
+For reference: 
+The data contains information on attendance, meeting rooms, desk bookings and more, and is sourced from multiple databases. 
 
-P3
-So here we have an AI Agent integrated with a chatbot, which has access to a number of tools, including a weather search tool, an internet search tool, as well as a tool that lets it access specific Macquarie documents.
+---- *Start Video* ----
 
-So we can see here that with our first question, it decides to use the weather search function.
-Our second question makes it do an internet search.
-Our next questions ask it policy related questions, so it calls upon the Macquarie policy tool.
+To walk through how it works, the user starts by inputting their request into the chat interface. 
 
-P4
-So going back to the diagram – So in summary – an AI agent decides on which tools to call given its unique problem.
+So in this example, we are asking ‘what percent of COG were in the Office on average in January.’
 
-Each tool receives information or performs an action, as instructed by the AI Agent.
+This is then taken to a planning agent, which, having knowledge of the data, will come up with steps to complete the task.
 
-And then there is also this other step up here, HITL or human in the loop. So if desired, we can make the AI Agent go back to the human to ask for clarification, guidance or feedback at different steps in the process.
+The planning agent will then send the first step to the SQL agent, which will turn its requests into an SQL query and make the relevant queries to the database.
 
-P5 
-How can we then maximise value from AI Agents?
+Once a step is completed, the planning agent then reviews the results and decides whether to either change the plan, send another request to the SQL agent, or to talk with the user, either to present results or ask a clarifying question.
 
--	So the low hanging fruit are workflows that fit a couple of key categories. These are workflows that have stable elements, and which are very time consuming, manual, and are very repetitive.
+It’s also important to note that I built this in a very flexible way, meaning this CRE databases could be substituted for a different dataset and be up and running with ease.
 
-AI Agents are primarily limited by what tools we provide them with.
-Some example tools might be Data analysis, drafting and sending emails, text summarisation, translation, and more.
+At the end of the query, outputted is a table which can be downloaded, and an AI explanation.
+
+*Here we can see the outputted answer of 39.6%, which has been verified as correct by the CRE team.
+
+Thanks for watching!
