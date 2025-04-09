@@ -1,38 +1,35 @@
-How can Data Science and AI empower Macquarie employees to easily access and analyse their data, without learning SQL or Power BI?
+How can Data Science and AI empower Macquarie employees to easily access and analyse their data, without learning SQL or Power BI? 
 
-My name is Jordan, and I am a part of the Data and AI - Data Science team, and today we are demonstrating a tech-spike we conducted for the BSD Corporate Real Estate team.
+My name is Jordan, and I am a member of the Data and AI - Data Science team. Today, we are showcasing an AI prototype we developed that allows for users to obtain custom insights on their data using natural language, and reduce the time taken to obtain critical insights. 
 
-This project demonstrates how AI agents can empower users to obtain custom insights and reduce the time taken to obtain critical insights. 
+To demonstrate this, we have partnered with the BSD corporate real estate team, for who this tool can provide significant value 
 
--------------------------------
+------- 
 
-CRE’s data includes organisational data, seating allocations and bookings, pass swipes and meeting room bookings. This data can be used to find critical efficiencies within Macquarie’s $650,000,000 per year commercial real estate leases. 
+Corporate Real Estate team’s data includes organisational data, seating allocations and bookings, pass swipes and meeting room bookings. This data can be used to find critical efficiencies within Macquarie’s $650,000,000 per year commercial real estate leases. 
 
-Currently CRE relies on dashboards, requiring analysts to build new pages to obtain new views on their data. An AI Agent enabled tool can navigate these datasets and enable decision makers and analysts to quickly iterate their prompts to obtain new valuable insights and improve management of our corporate space. 
+Currently CRE relies on dashboards, requiring analysts to build new pages to obtain new views on their data. An AI Agent enabled tool can navigate these datasets easily, enabling decision makers and analysts to quickly iterate their queries to obtain valuable insights and improve management of our corporate space. 
 
+ 
 
-We have conducted a rapid 2-week feasibility test to build a simple agentic AI based tool to demonstrate the benefits and capabilities of this technology, that gives users access to natural language-based self-service access to their own data.
+We have conducted a rapid 2-week feasibility test to build a simple Agentic AI based tool to demonstrate the benefits and capabilities of this technology, that gives users access to natural language-based self-service access to their own data. 
 
-It was built in python and using gpt-4o.
+We built the prototype in a very flexible way, meaning this CRE databases could be substituted for a different dataset and be up and running with ease. 
 
-It’s also important to note that we built this in a very flexible way, meaning this CRE databases could be substituted for a different dataset and be up and running with ease.
+---- Start Video ------------- 
 
----- *Start Video* ----
+To walk through how it works, the user starts by inputting their request into the chat interface. In this example, we are asking ‘Provide a list of divisions that have attendance greater than 70% in Feb 2025.’ 
 
-To walk through how it works, the user starts by inputting their request into the chat interface. 
+This is then given to a planning agent, which, having knowledge of the data, will come up with steps to complete the task. 
 
-So in this example, we are asking ‘what percent of COG were in the Office on average in January.’
+The planning agent will then send the first step to the SQL agent, which will turn its requests into an SQL query and make the relevant queries to the database. 
 
-This is then given to a planning agent, which, having knowledge of the data, will come up with steps to complete the task.
+Once a step is completed, the planning agent then reviews the results and decides whether to either change the plan, send another request to the SQL agent, or to talk with the user, either to present results or ask a clarifying question. 
 
-The planning agent will then send the first step to the SQL agent, which will turn its requests into an SQL query and make the relevant queries to the database.
+At the end of the query, a table is returned to the user, which can be downloaded, along with an AI explanation.  
 
-Once a step is completed, the planning agent then reviews the results and decides whether to either change the plan, send another request to the SQL agent, or to talk with the user, either to present results or ask a clarifying question.
+Here we can see the answer given is a list of divisions, which has been verified as correct via the existing dashboard. 
 
-At the end of the query, a table is a table is returned to the user, which can be downloaded, along with an AI explanation.
+By allowing for easy access to the CRE Data database through a simple prompt, the CRE team can improve the utilisation of existing facilities, plan for better office layouts, perform scenario mapping, and reduce the time required to obtain technical data for business users. The insights can help CRE team can optimise their $650,000,000 per year commercial real estate lease. 
 
-*Here we can see the outputted answer of 39.6%, which has been verified as correct via the existing dashboard.
-
-By allowing for easy access to the CRE Data database through a simple prompt, the CRE team can improve the utilisation of existing facilities, plan for better office layouts, perform scenario mapping, and reduce the time required to obtain technical data for business users.
-
-Thanks to the CRE team and thanks for watching.
+Thanks to the CRE team and thanks for watching. 
