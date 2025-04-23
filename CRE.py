@@ -8,6 +8,7 @@ from agents.create_plan import create_plan
 from utils.unique import metadata_str_into_dict, create_filtered_dict, format_dict_info # Assuming these utils exist and work as expected
 import re
 import traceback # For better error reporting
+import time # To potentially add tiny delay if needed, sometimes helps rendering
 
 DB_NAME = 'CRE_Data.db'
 
@@ -32,6 +33,9 @@ if 'analysis_in_progress' not in st.session_state:
     st.session_state.analysis_in_progress = False # Flag to control step-by-step execution
 if 'current_question' not in st.session_state:
     st.session_state.current_question = "" # Store the question being analyzed
+if 'initial_run_triggered' not in st.session_state:
+    st.session_state.initial_run_triggered = False # Track if the first run button click happened
+
 
 # --- Load Metadata ---
 # Load once and store potentially in session state or rely on Streamlit's script execution model
@@ -55,6 +59,7 @@ except Exception as e:
 
 def run_single_analysis_step(question, new_data, prior_steps, plan, filtered_dict):
     """Runs ONLY ONE step of the analysis using the orchestrator and appropriate tool."""
+    # (Function definition remains the same as previous correct version)
     try:
         # Call the orchestrator_agent
         output = orchestrator_agent(question=question, metadata=filtered_dict, new_data=new_data, prior_steps=prior_steps, current_plan=plan)
@@ -94,11 +99,6 @@ def run_single_analysis_step(question, new_data, prior_steps, plan, filtered_dic
             step_description = f"STEP {len(prior_steps) + 1}. [{tool_to_call}]: {step_details}"
 
             # Update the plan (optional, depends on update_plan logic)
-            # Ensure update_plan can handle being called repeatedly if needed.
-            # For simplicity here, we might assume the initial plan is sufficient or handle updates carefully.
-            # Let's assume update_plan is only called if needed based on some logic, or maybe not needed per step.
-            # For this example, we pass the plan through but don't explicitly update it here unless sql_agent's output suggests it.
-            # updated_plan = update_plan(prior_steps + [step_description], plan) # If plan needs updating based on step
             updated_plan = plan # Keep plan as is for now unless specifically needed
 
             # Store SQL query for display if available
@@ -112,10 +112,8 @@ def run_single_analysis_step(question, new_data, prior_steps, plan, filtered_dic
              step_output = f"Attempted to use unknown tool: {tool_to_call}"
              step_description = f"STEP {len(prior_steps) + 1}. [Unknown Tool]: {tool_to_call}"
              step_info_for_display = {"step": step_description, "tool": "Unknown Tool"}
-             # Decide how to proceed: maybe treat as 'Talk with user' or stop?
-             # For now, treat as end step with a warning message.
+             # Treat as end step with a warning message.
              return 'Talk with user Tool', f"Analysis stopped: Unknown tool '{tool_to_call}' requested.", new_data, step_info_for_display, plan
-
 
     except Exception as e:
         st.error(f"Error during analysis step execution: {e}")
@@ -127,10 +125,12 @@ def run_single_analysis_step(question, new_data, prior_steps, plan, filtered_dic
         # Treat error as an end condition ('Talk with user Tool' signals end)
         return 'Talk with user Tool', error_message, new_data, step_info_for_display, plan
 
+
 # Caching the CSV conversion function
 @st.cache_data
 def convert_df_to_csv(df):
     """Converts a Pandas DataFrame to CSV bytes."""
+    # (Function definition remains the same)
     try:
         # IMPORTANT: Ensure df is hashable or use a more robust caching strategy if needed
         return df.to_csv(index=False).encode('utf-8')
@@ -138,18 +138,72 @@ def convert_df_to_csv(df):
         st.error(f"Error converting DataFrame to CSV: {e}")
         return None
 
+# --- Automatic Step Execution Logic ---
+# This block runs on every script rerun IF analysis_in_progress is True
+if st.session_state.analysis_in_progress and not st.session_state.initial_run_triggered:
+    try:
+        with st.spinner("Running analysis step..."):
+            # Retrieve necessary state from session state
+            prior_steps_list_text = [item['step'] for item in st.session_state.prior_steps_display] # Get text desc only
+            current_new_data = st.session_state.new_data_results
+            analysis_plan = st.session_state.plan
+            filtered_metadata_dict = st.session_state.filtered_metadata
+            current_question = st.session_state.current_question
+
+            if not filtered_metadata_dict:
+                 st.error("Filtered metadata is missing. Cannot proceed with analysis step.")
+                 st.session_state.analysis_in_progress = False # Stop the process
+            else:
+                # Call the function to run just one step
+                tool_called, output, updated_new_data, step_info_for_display, updated_plan = run_single_analysis_step(
+                    current_question,         # Pass the original question
+                    current_new_data,       # Pass the current data dictionary
+                    prior_steps_list_text,  # Pass the list of prior step descriptions
+                    analysis_plan,          # Pass the current plan
+                    filtered_metadata_dict  # Pass the user-filtered metadata
+                )
+
+                # Update session state with results of the step
+                st.session_state.prior_steps_display.append(step_info_for_display)
+                st.session_state.new_data_results = updated_new_data
+                st.session_state.plan = updated_plan # Update plan if modified
+
+                # Check if the step indicated the end of the analysis
+                if tool_called == 'Talk with user Tool':
+                    st.session_state.analysis_results = output # Store the final message
+                    st.session_state.analysis_in_progress = False # Mark analysis as complete
+                else:
+                    # Analysis is not finished, keep the flag True
+                    st.session_state.analysis_in_progress = True
+
+                # Short delay can sometimes help ensure UI updates smoothly, optional
+                # time.sleep(0.1)
+
+    except Exception as e:
+        # Error occurred during the step execution
+        st.error(f"A critical error occurred during analysis execution: {e}")
+        st.error(traceback.format_exc())
+        st.session_state.analysis_results = f"Analysis stopped due to critical error: {e}"
+        st.session_state.analysis_in_progress = False # Stop the process
+
+    # Rerun to display the updated state and trigger the next step OR show final result
+    st.rerun()
+
+
 # --- Streamlit App UI ---
 st.title("CRE Database Chat")
 
+# Reset the trigger flag after the potential automatic execution block has run
+st.session_state.initial_run_triggered = False
+
 # Main area for user input
-# Use session state to preserve the question if analysis is in progress
 if 'user_question_input' not in st.session_state:
      st.session_state.user_question_input = ""
-
-question = st.text_area("Enter your question:", key="user_question_input")
+# Disable input if analysis is running
+question = st.text_area("Enter your question:", key="user_question_input", disabled=st.session_state.analysis_in_progress)
 
 # --- Planning Phase ---
-col1, col2 = st.columns([1, 3]) # Adjust column widths as needed
+col1, col2 = st.columns([1, 3])
 
 with col1:
     # Disable planning if analysis is running
@@ -157,223 +211,151 @@ with col1:
     if st.button("Plan Analysis", key="plan_button", disabled=plan_button_disabled):
         if question:
             # Reset state for a new planning action
-            st.session_state.planning_complete = False
+            st.session_state.planning__complete = False
             st.session_state.analysis_results = None
             st.session_state.new_data_results = {}
             st.session_state.prior_steps_display = []
-            st.session_state.analysis_in_progress = False # Ensure analysis stops if a new plan is made
+            st.session_state.analysis_in_progress = False # Ensure analysis stops
             st.session_state.filtered_metadata = None
-            st.session_state.current_question = question # Store the question associated with this plan
+            st.session_state.current_question = question # Store the question
 
             try:
                 with st.spinner("Generating analysis plan..."):
-                    # Call create_plan agent
                     plan_result, suggested_tables = create_plan(question=question, metadata_string=metadata_string)
                 st.session_state.plan = plan_result
-                # Validate suggested tables against all available tables
                 valid_suggested = [t for t in suggested_tables if t in all_available_tables]
                 st.session_state.suggested_tables = valid_suggested
                 st.session_state.planning_complete = True
-                st.rerun() # Rerun to show the table selection section immediately
+                st.rerun() # Rerun to show table selection
 
             except Exception as e:
                 st.error(f"Error during planning phase: {e}")
                 st.error(traceback.format_exc())
-                st.session_state.planning_complete = False # Ensure flag is false on error
+                st.session_state.planning_complete = False
                 st.session_state.analysis_in_progress = False
         else:
             st.warning("Please enter a question before planning.")
 
-# --- Table Confirmation and Execution Phase ---
-# This section appears only after the 'Plan Analysis' button has been successfully clicked
+# --- Table Confirmation and Execution Trigger ---
 if st.session_state.planning_complete:
-    st.markdown("---") # Visual separator
+    st.markdown("---")
     st.subheader("Table Selection Confirmation")
-    st.markdown("The analysis plan suggests using the tables below. Please confirm or adjust the selection for the analysis:")
+    st.markdown("Confirm tables and start the analysis:")
 
-    # The multiselect widget manages its own state via the key
     confirmed_tables = st.multiselect(
         "Select tables to include in the analysis:",
         options=all_available_tables,
-        default=st.session_state.suggested_tables, # Pre-select suggested tables
+        default=st.session_state.suggested_tables,
         key="table_confirmation_multiselect",
-        disabled=st.session_state.analysis_in_progress # Disable if analysis is running
+        disabled=st.session_state.analysis_in_progress # Disable if running
     )
 
-    # Determine if the button should be "Run Analysis" or "Continue Analysis"
-    run_button_label = "Continue Analysis" if st.session_state.analysis_in_progress else "Run Analysis with Selected Tables"
+    # Button ONLY triggers the *start* of the analysis
+    run_button_label = "Run Analysis"
     run_button_key = "run_analysis_button"
-
-    if st.button(run_button_label, key=run_button_key):
-        selected_tables = st.session_state.table_confirmation_multiselect # Get current selection
+    if st.button(run_button_label, key=run_button_key, disabled=st.session_state.analysis_in_progress):
+        selected_tables = st.session_state.table_confirmation_multiselect
         if not selected_tables:
             st.warning("Please select at least one table to run the analysis.")
         else:
-            # --- Analysis Step Execution ---
-            if not st.session_state.analysis_in_progress:
-                # --- This is the FIRST step ---
-                st.info(f"Starting analysis using tables: `{'`, `'.join(selected_tables)}`")
-                # Create and store filtered metadata based on the user's confirmed selection
-                try:
-                    filtered_metadata_dict = create_filtered_dict(metadata_dict, selected_tables, db_name=DB_NAME)
-                    st.session_state.filtered_metadata = filtered_metadata_dict # Store for subsequent steps
-                except Exception as e:
-                     st.error(f"Failed to filter metadata based on selection: {e}")
-                     st.stop()
+            # --- INITIATE Analysis ---
+            # This block only runs ONCE when the button is clicked
+            st.info(f"Starting analysis with: `{'`, `'.join(selected_tables)}`")
+            try:
+                filtered_metadata_dict = create_filtered_dict(metadata_dict, selected_tables, db_name=DB_NAME)
+                st.session_state.filtered_metadata = filtered_metadata_dict # Store for steps
 
-                # Initialize/reset state specifically for this analysis run
+                # Reset state for this specific run
                 st.session_state.prior_steps_display = []
                 st.session_state.new_data_results = {}
-                st.session_state.analysis_results = None # Clear previous final results
+                st.session_state.analysis_results = None
                 # analysis_plan is already in st.session_state.plan
-                st.session_state.analysis_in_progress = True # Set flag to start the process
-                # Use the question stored when planning started
-                current_question = st.session_state.current_question
+                st.session_state.analysis_in_progress = True # <--- SET FLAG TO START
+                st.session_state.initial_run_triggered = True # <--- Mark that button was clicked
 
-            # --- Execute ONE analysis step (whether first or subsequent) ---
-            # Retrieve necessary state from session state
-            prior_steps_list_text = [item['step'] for item in st.session_state.prior_steps_display] # Get text desc only
-            current_new_data = st.session_state.new_data_results
-            analysis_plan = st.session_state.plan
-            filtered_metadata_dict = st.session_state.filtered_metadata
-            current_question = st.session_state.current_question # Get the question
+                # Rerun immediately to let the automatic execution block take over
+                st.rerun()
+
+            except Exception as e:
+                 st.error(f"Failed to filter metadata or initialize analysis: {e}")
+                 st.session_state.analysis_in_progress = False # Ensure it stops
 
 
-            if not filtered_metadata_dict:
-                 st.error("Filtered metadata is missing. Cannot proceed with analysis step.")
-                 st.session_state.analysis_in_progress = False # Stop the process
-                 st.rerun()
+# --- Display Area ---
 
-            else:
-                try:
-                    with st.spinner("Running next analysis step..."):
-                        # Call the function to run just one step
-                        tool_called, output, updated_new_data, step_info_for_display, updated_plan = run_single_analysis_step(
-                            current_question,         # Pass the original question
-                            current_new_data,       # Pass the current data dictionary
-                            prior_steps_list_text,  # Pass the list of prior step descriptions
-                            analysis_plan,          # Pass the current plan
-                            filtered_metadata_dict  # Pass the user-filtered metadata
-                        )
-
-                    # Update session state with results of the step
-                    st.session_state.prior_steps_display.append(step_info_for_display)
-                    st.session_state.new_data_results = updated_new_data
-                    st.session_state.plan = updated_plan # Update plan if modified
-
-                    # Check if the step indicated the end of the analysis
-                    if tool_called == 'Talk with user Tool':
-                        st.session_state.analysis_results = output # Store the final message
-                        st.session_state.analysis_in_progress = False # Mark analysis as complete
-                    else:
-                        # Analysis is not finished, keep the flag True
-                        st.session_state.analysis_in_progress = True
-
-                    # Rerun to display the updated sidebar and potentially continue
-                    st.rerun()
-
-                except Exception as e:
-                    # Error occurred during the step execution within the function
-                    st.error(f"A critical error occurred during analysis step execution: {e}")
-                    st.error(traceback.format_exc())
-                    st.session_state.analysis_results = f"Analysis stopped due to critical error: {e}"
-                    st.session_state.analysis_in_progress = False # Stop the process
-                    st.rerun() # Rerun to show the error state
-
-# Add spinner indication if analysis is running but button wasn't just clicked
-if st.session_state.analysis_in_progress and not st.session_state.get(run_button_key, False):
-     st.info("Analysis in progress...")
-
-
-# --- Results Display Section ---
-
-# Display steps in the sidebar (reads from session state)
+# Sidebar for Steps (updates automatically on each rerun)
 with st.sidebar:
     st.header("Analysis Steps")
-    if not st.session_state.prior_steps_display:
-        st.write("No analysis steps executed yet.")
+    if st.session_state.analysis_in_progress and not st.session_state.prior_steps_display:
+         st.write("Initializing analysis...")
+    elif not st.session_state.prior_steps_display:
+        st.write("Plan the analysis and select tables first.")
     else:
         for i, item in enumerate(st.session_state.prior_steps_display):
             st.write(item.get("step", f"Step {i+1} details missing"))
-            # Display SQL if available for the step
             if item.get("tool") == 'SQL Tool' and item.get("sql"):
                 with st.expander("Show SQL Query", expanded=False):
                      st.code(item["sql"], language="sql")
             st.markdown("---") # Separator
+    # Indicate if running
+    if st.session_state.analysis_in_progress:
+        st.info("⚙️ Analysis running...")
 
-# Display final message and dataframes in the main area if results exist
-# This will only show when analysis_in_progress is False and analysis_results is set
+
+# Final Result Display (only shows when analysis is complete)
 if not st.session_state.analysis_in_progress and st.session_state.analysis_results:
     st.markdown("---")
     st.subheader("Analysis Result")
-    st.markdown(st.session_state.analysis_results) # Display the final message
+    st.markdown(st.session_state.analysis_results)
 
-    # Find and display dataframe previews and download buttons
-    # Use the stored new_data_results from session state
+    # Display DataFrames
     generated_data = st.session_state.new_data_results
-    # Check if analysis_results is a string before using regex
     final_message_str = st.session_state.analysis_results if isinstance(st.session_state.analysis_results, str) else ""
-    matches = re.findall(r'\[\[(.*?)\]\]', final_message_str) # Find [[df_name]] mentions
+    matches = re.findall(r'\[\[(.*?)\]\]', final_message_str)
     displayed_dfs = set()
 
-    if matches or generated_data: # Also show DFs if they exist even if not mentioned in final text
+    if matches or generated_data:
         st.subheader("Generated DataFrames")
-
-        # Display mentioned DFs first
+        # Display mentioned DFs
         for name in matches:
-            name = name.strip() # Clean whitespace
+            name = name.strip()
             if name in generated_data and name not in displayed_dfs:
                 df_info = generated_data[name]
-                # Assuming structure is {'df_name': {'data_frame': pd.DataFrame, ...}}
                 df = df_info.get('data_frame')
-
                 if isinstance(df, pd.DataFrame):
                     st.write(f"**DataFrame: `{name}`** (Preview)")
-                    st.dataframe(df.head(), use_container_width=True)
-
-                    csv_data = convert_df_to_csv(df) # Use the cached function
-                    if csv_data:
-                        try:
-                            st.download_button(
-                                label=f"Download `{name}` as CSV",
-                                data=csv_data,
-                                file_name=f"{name}.csv",
-                                mime='text/csv',
-                                key=f"download_{name}_{len(csv_data)}" # Make key potentially unique
-                            )
-                        except Exception as e:
-                            st.error(f"Error creating download button for {name}: {e}")
-
-                    displayed_dfs.add(name) # Mark as displayed
-                elif name not in displayed_dfs: # Only warn once if mentioned but not DF
-                     st.warning(f"Data for `[[{name}]]` found but is not a valid DataFrame.")
-                     displayed_dfs.add(name) # Avoid re-warning
-
-            elif name not in generated_data and name not in displayed_dfs:
-                # Only warn if mentioned but not found AND not already warned about
-                st.warning(f"DataFrame `[[{name}]]` mentioned in the result but was not found in the generated data.")
-                displayed_dfs.add(name) # Avoid re-warning
-
-        # Display any other generated DFs that weren't mentioned
-        for name, df_info in generated_data.items():
-             if name not in displayed_dfs:
-                 df = df_info.get('data_frame')
-                 if isinstance(df, pd.DataFrame):
-                    st.write(f"**DataFrame: `{name}`** (Preview - not explicitly mentioned in final result)")
                     st.dataframe(df.head(), use_container_width=True)
                     csv_data = convert_df_to_csv(df)
                     if csv_data:
                         try:
                             st.download_button(
-                                label=f"Download `{name}` as CSV",
-                                data=csv_data,
-                                file_name=f"{name}.csv",
-                                mime='text/csv',
+                                label=f"Download `{name}` as CSV", data=csv_data,
+                                file_name=f"{name}.csv", mime='text/csv',
                                 key=f"download_{name}_{len(csv_data)}"
                             )
-                        except Exception as e:
-                            st.error(f"Error creating download button for {name}: {e}")
+                        except Exception as e: st.error(f"DL Button Error {name}: {e}")
                     displayed_dfs.add(name)
-
+                elif name not in displayed_dfs:
+                     st.warning(f"`[[{name}]]` data not a DataFrame.")
+                     displayed_dfs.add(name)
+            elif name not in generated_data and name not in displayed_dfs:
+                st.warning(f"`[[{name}]]` mentioned but not generated.")
+                displayed_dfs.add(name)
+        # Display other generated DFs
+        for name, df_info in generated_data.items():
+             if name not in displayed_dfs:
+                 df = df_info.get('data_frame')
+                 if isinstance(df, pd.DataFrame):
+                    st.write(f"**DataFrame: `{name}`** (Preview - unmentioned)")
+                    st.dataframe(df.head(), use_container_width=True)
+                    csv_data = convert_df_to_csv(df)
+                    if csv_data:
+                        try:
+                            st.download_button(
+                                label=f"Download `{name}` as CSV", data=csv_data,
+                                file_name=f"{name}.csv", mime='text/csv',
+                                key=f"download_{name}_{len(csv_data)}" )
+                        except Exception as e: st.error(f"DL Button Error {name}: {e}")
+                    displayed_dfs.add(name)
 
 # --- End of App ---
