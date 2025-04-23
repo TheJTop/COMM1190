@@ -9,7 +9,7 @@ from utils.unique import metadata_str_into_dict, create_filtered_dict, format_di
 import re
 import traceback # For better error reporting
 
-DB_NAME = 'CRE_Data'
+DB_NAME = 'CRE_Data.db'
 
 # --- Initialize Session State ---
 # Persists values across reruns/button clicks
@@ -90,14 +90,6 @@ def run_analysis(question, new_data, prior_steps, plan, filtered_dict):
             sql_query = ai_output.get('SQL_Query', None)
             return tool_to_call, {'df_name': df_name, 'SQL_Query': sql_query}, new_data, f"STEP {len(prior_steps) + 1}. [{tool_to_call}]: {step_details}", updated_plan
 
-        else:
-            # Handle unknown tool or case where no tool is called
-            step_details = f"Orchestrator decided no known tool was needed or tool '{tool_to_call}' is not implemented. Instructions: {instructions}"
-            # Decide how to proceed - maybe treat as 'Talk with user'? For now, end the loop by returning a specific type.
-            # Returning 'Talk with user Tool' to break the loop and show the last thought process.
-            final_message = f"Analysis step concluded without calling SQL or explicitly talking to user. Last instructions: {instructions}"
-            return 'Talk with user Tool', final_message, new_data, f"STEP {len(prior_steps) + 1}. [Orchestrator]: {step_details}", plan
-
     except Exception as e:
         st.error(f"Error during analysis step: {e}")
         st.error(traceback.format_exc())
@@ -136,13 +128,10 @@ with col1:
             try:
                 with st.spinner("Generating analysis plan..."):
                     # Call create_plan agent
-                    plan_result, tables_dict_result = create_plan(question=question, metadata_string=metadata_string)
-
+                    plan_result, suggested_tables = create_plan(question=question, metadata_string=metadata_string)
                 st.session_state.plan = plan_result
-                # Extract suggested table names, assuming structure {'DB_NAME': ['t1', 't2']}
-                raw_suggested_tables = tables_dict_result.get(DB_NAME, [])
                 # Validate suggested tables against all available tables
-                valid_suggested = [t for t in raw_suggested_tables if t in all_available_tables]
+                valid_suggested = [t for t in suggested_tables if t in all_available_tables]
                 st.session_state.suggested_tables = valid_suggested
                 st.session_state.planning_complete = True
                 # No rerun needed here, the rest of the script will execute and show the next section
@@ -172,7 +161,6 @@ if st.session_state.planning_complete:
     # Add the "Run Analysis" button within this conditional block
     if st.button("Run Analysis with Selected Tables", key="run_analysis_button"):
         selected_tables = st.session_state.table_confirmation_multiselect # Get current selection
-
         if not selected_tables:
             st.warning("Please select at least one table to run the analysis.")
         else:
@@ -181,7 +169,7 @@ if st.session_state.planning_complete:
 
             # Create filtered metadata based on the user's confirmed selection
             try:
-                filtered_metadata_dict = create_filtered_dict(metadata_dict, selected_tables)
+                filtered_metadata_dict = create_filtered_dict(metadata_dict, selected_tables, db_name=DB_NAME)
             except Exception as e:
                  st.error(f"Failed to filter metadata based on selection: {e}")
                  st.stop()
