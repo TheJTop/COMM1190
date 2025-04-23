@@ -5,8 +5,11 @@ from agents.sql_agent import sql_agent
 from agents.talk_with_user_agent import talk_with_user_agent
 from agents.update_plan import update_plan
 from agents.create_plan import create_plan
+from utils.unique import metadata_str_into_dict, create_filtered_dict, format_dict_info
 
 import re
+
+DB_NAME = 'CRE_Data'
 
 # Initialize the Streamlit app
 st.title("CRE Database Chat")
@@ -17,7 +20,9 @@ tab_main = st.tabs(["Main"])[0]
 # Initialize the metadata and new_data dictionaries
 with open('agents/prompts/metadata.txt', 'r') as file:
     metadata = file.read()
+    metadata_dict = metadata_str_into_dict(metadata)
 
+#print(metadata_dict['CRE_Data.db'].keys()) #How to get list of tables
 new_data = {}
 prior_steps = []
 plan = ""
@@ -26,13 +31,13 @@ plan = ""
 def run_analysis(question, new_data, prior_steps, plan, filtered_dict):
 
     # Call the orchestrator_agent
-    output = orchestrator_agent(question=question, metadata=filtered_dict['All'], new_data=new_data, prior_steps=prior_steps, current_plan=plan)
+    output = orchestrator_agent(question=question, metadata=filtered_dict, new_data=new_data, prior_steps=prior_steps, current_plan=plan)
     
     # Call the next agent
     if output['Call_Tool']['Tool'] == 'Talk with user Tool':
         message = talk_with_user_agent(
             user_message=output['Call_Tool']['Instructions'],
-            metadata=filtered_dict['All'],
+            metadata=filtered_dict,
             new_data=new_data,
             prior_steps=prior_steps,
             current_plan=plan
@@ -68,7 +73,14 @@ with tab_main:
     if st.button("Run"):
         talk_with_user = False
         # Create the initial plan
-        plan, filtered_dict = create_plan(question = question, metadata_string = metadata)
+        plan, tables = create_plan(question = question, metadata_string = metadata)
+        
+        # Get tables from the plan to limit metadata
+        filtered_dict = create_filtered_dict(metadata_dict, tables)
+        filtered_metadata = format_dict_info(filtered_dict)
+
+
+
         while talk_with_user == False:
             tool_called, output, new_data, step, plan  = run_analysis(question, new_data, prior_steps, plan, filtered_dict)
             with st.sidebar:
@@ -92,4 +104,3 @@ with tab_main:
                 file_name=f"{name}.csv",
                 mime='text/csv',
             )
-
