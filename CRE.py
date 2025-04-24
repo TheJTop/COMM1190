@@ -1,63 +1,37 @@
-import streamlit as st
 import pandas as pd
 from agents.orchestrator_agent import orchestrator_agent
 from agents.sql_agent import sql_agent
 from agents.talk_with_user_agent import talk_with_user_agent
 from agents.update_plan import update_plan
 from agents.create_plan import create_plan
-from utils.unique import metadata_str_into_dict, create_filtered_dict, format_dict_info
+from utils.unique import metadata_str_into_dict, create_filtered_dict # Assuming format_dict_info is not needed for console output
 import re
 import traceback # For better error reporting
+import sys # To exit cleanly on errors
 
+# --- Constants ---
 DB_NAME = 'CRE_Data.db'
-
-# --- Initialize Session State ---
-# Persists values across reruns/button clicks
-if 'planning_complete' not in st.session_state:
-    st.session_state.planning_complete = False # Flag to show checklist/run button
-if 'plan' not in st.session_state:
-    st.session_state.plan = "" # Stores the plan generated
-if 'suggested_tables' not in st.session_state:
-    st.session_state.suggested_tables = [] # Stores tables suggested by create_plan
-# confirmed_tables will be implicitly stored by the multiselect widget's key or read directly
-if 'analysis_results' not in st.session_state:
-    st.session_state.analysis_results = None # Stores the final output message
-if 'new_data_results' not in st.session_state:
-     st.session_state.new_data_results = {} # Stores generated dataframes {name: {'data_frame': df, ...}}
-if 'prior_steps_display' not in st.session_state:
-    st.session_state.prior_steps_display = [] # Stores steps for sidebar display
-
-# --- Load Metadata ---
-# Load once and store potentially in session state or rely on Streamlit's script execution model
-try:
-    with open('agents/prompts/metadata.txt', 'r') as file:
-        metadata_string = file.read() # Keep the raw string for create_plan
-        metadata_dict = metadata_str_into_dict(metadata_string)
-        # Get all available tables for the database
-        all_available_tables = list(metadata_dict.get(DB_NAME, {}).keys())
-        if not all_available_tables:
-             st.warning(f"No tables found in metadata for database: {DB_NAME}")
-except FileNotFoundError:
-    st.error("Metadata file 'agents/prompts/metadata.txt' not found. Please ensure the file exists.")
-    st.stop() # Stop execution if metadata is missing
-except Exception as e:
-    st.error(f"Error loading or parsing metadata: {e}")
-    st.error(traceback.format_exc())
-    st.stop() # Stop execution on other metadata errors
+METADATA_FILE = 'agents/prompts/metadata.txt'
 
 # --- Function Definitions ---
 
-def run_analysis(question, new_data, prior_steps, plan, filtered_dict):
+def run_analysis(question, new_data, prior_steps, plan, filtered_dict, db_name):
     """Runs a single step of the analysis using the orchestrator and appropriate tool."""
     try:
         # Call the orchestrator_agent
+        print("\n--- Calling Orchestrator ---")
         output = orchestrator_agent(question=question, metadata=filtered_dict, new_data=new_data, prior_steps=prior_steps, current_plan=plan)
+        print(f"Orchestrator Output: {output}") # Log orchestrator decision
 
         tool_to_call = output.get('Call_Tool', {}).get('Tool', 'Unknown Tool')
         instructions = output.get('Call_Tool', {}).get('Instructions', '')
 
+        print(f"Orchestrator decided to call: {tool_to_call}")
+        print(f"Instructions: {instructions}")
+
         # Call the next agent based on orchestrator output
         if tool_to_call == 'Talk with user Tool':
+            print("\n--- Calling Talk With User Tool ---")
             message = talk_with_user_agent(
                 user_message=instructions,
                 metadata=filtered_dict,
@@ -67,194 +41,220 @@ def run_analysis(question, new_data, prior_steps, plan, filtered_dict):
             )
             step_output = message.get('Send_To_User', 'No message generated.')
             step_details = f"'Message to User: {step_output}'"
-            return tool_to_call, step_output, new_data, f"STEP {len(prior_steps) + 1}. [{tool_to_call}]: {step_details}", plan # Return user message directly
+            # Return user message directly
+            return tool_to_call, step_output, new_data, f"STEP {len(prior_steps) + 1}. [{tool_to_call}]: {step_details}", plan
 
         elif tool_to_call == 'SQL Tool':
+            print("\n--- Calling SQL Tool ---")
             # Ensure metadata for the specific DB is passed correctly
-            db_metadata = filtered_dict.get(DB_NAME, {})
+            db_metadata = filtered_dict.get(db_name, {})
             if not db_metadata:
-                 raise ValueError(f"No metadata found for database '{DB_NAME}' in the filtered dictionary.")
+                raise ValueError(f"No metadata found for database '{db_name}' in the filtered dictionary.")
 
-            ai_output, new_data = sql_agent(
+            ai_output, updated_new_data = sql_agent(
                 instructions,
                 metadata = db_metadata,
-                database_name = DB_NAME,
+                database_name = db_name,
                 new_data = new_data # Pass and potentially update new_data dict
             )
+            # Make sure new_data from the function scope is updated
+            new_data = updated_new_data
+
             df_name = ai_output.get('df_name', 'Unknown DataFrame')
+            sql_query = ai_output.get('SQL_Query', 'No SQL Query Provided') # Get SQL query
+            print(f"SQL Tool generated DataFrame: {df_name}")
+            if sql_query:
+                print(f"SQL Query Executed:\n{sql_query}")
+
             step_details = f"'{instructions}' | OUTPUT DataFrame: {df_name}"
+
             # Update the plan (optional, depends on update_plan logic)
-            updated_plan = update_plan(prior_steps + [f"STEP {len(prior_steps) + 1}. [{tool_to_call}]: {step_details}"], plan)
+            print("\n--- Calling Update Plan Tool ---")
+            current_step_full_desc = f"STEP {len(prior_steps) + 1}. [{tool_to_call}]: {step_details}"
+            updated_plan = update_plan(prior_steps + [current_step_full_desc], plan)
+            print(f"Plan Updated To:\n{updated_plan}")
 
-            # Store SQL query for display if available
-            sql_query = ai_output.get('SQL_Query', None)
-            return tool_to_call, {'df_name': df_name, 'SQL_Query': sql_query}, new_data, f"STEP {len(prior_steps) + 1}. [{tool_to_call}]: {step_details}", updated_plan
+            return tool_to_call, {'df_name': df_name, 'SQL_Query': sql_query}, new_data, current_step_full_desc, updated_plan
+
+        else:
+             # Handle unknown tool case
+            print(f"WARNING: Orchestrator requested unknown tool: {tool_to_call}")
+            # Decide how to proceed: maybe default to 'Talk with user' or raise error
+            # For now, let's signal to stop by pretending it's 'Talk with user' with an error message
+            error_message = f"Analysis halted: Orchestrator requested an unknown tool ('{tool_to_call}')."
+            step_details = f"'Internal Error: {error_message}'"
+            step_description = f"STEP {len(prior_steps) + 1}. [ERROR]: {step_details}"
+            return 'Talk with user Tool', error_message, new_data, step_description, plan
+
 
     except Exception as e:
-        st.error(f"Error during analysis step: {e}")
-        st.error(traceback.format_exc())
+        print(f"Error during analysis step: {e}", file=sys.stderr)
+        traceback.print_exc()
         # Re-raise or return an error indicator to stop the loop gracefully
-        raise e # Or return a specific error state
+        raise e # Stop the execution
 
-# Caching the CSV conversion function
-@st.cache_data
-def convert_df_to_csv(df):
-    """Converts a Pandas DataFrame to CSV bytes."""
+# --- Main Execution ---
+if __name__ == "__main__":
+    print("--- CRE Database Console Runner ---")
+
+    # --- Load Metadata ---
     try:
-        # IMPORTANT: Ensure df is hashable or use a more robust caching strategy if needed
-        return df.to_csv(index=False).encode('utf-8')
+        print(f"Loading metadata from: {METADATA_FILE}")
+        with open(METADATA_FILE, 'r') as file:
+            metadata_string = file.read() # Keep the raw string for create_plan
+            metadata_dict = metadata_str_into_dict(metadata_string)
+            # Get all available tables for the database
+            all_available_tables = list(metadata_dict.get(DB_NAME, {}).keys())
+            if not all_available_tables:
+                print(f"WARNING: No tables found in metadata for database: {DB_NAME}", file=sys.stderr)
+            else:
+                 print(f"Available tables in {DB_NAME}: {', '.join(all_available_tables)}")
+    except FileNotFoundError:
+        print(f"FATAL ERROR: Metadata file '{METADATA_FILE}' not found.", file=sys.stderr)
+        sys.exit(1) # Stop execution if metadata is missing
     except Exception as e:
-        st.error(f"Error converting DataFrame to CSV: {e}")
-        return None
+        print(f"FATAL ERROR: Error loading or parsing metadata: {e}", file=sys.stderr)
+        traceback.print_exc()
+        sys.exit(1) # Stop execution on other metadata errors
 
-# --- Streamlit App UI ---
-st.title("CRE Database Chat")
+    # --- Get User Input ---
+    question = input("Enter your question:\n> ")
+    if not question:
+        print("No question entered. Exiting.")
+        sys.exit(0)
 
-# Main area for user input
-question = st.text_area("Enter your question:", key="user_question_input")
+    # --- Planning Phase ---
+    plan = ""
+    suggested_tables = []
+    try:
+        print("\n--- Generating Analysis Plan ---")
+        # Call create_plan agent
+        plan_result, suggested_tables_raw = create_plan(question=question, metadata_string=metadata_string)
+        plan = plan_result
+        # Validate suggested tables against all available tables
+        suggested_tables = [t for t in suggested_tables_raw if t in all_available_tables]
 
-# --- Planning Phase ---
-col1, col2 = st.columns([1, 3]) # Adjust column widths as needed
+        print(f"\nInitial Plan:\n{plan}")
+        print(f"\nSuggested Tables (validated): {', '.join(suggested_tables)}")
 
-with col1:
-    if st.button("Plan Analysis", key="plan_button"):
-        if question:
-            # Reset state for a new planning action
-            st.session_state.planning_complete = False
-            st.session_state.analysis_results = None
-            st.session_state.new_data_results = {}
-            st.session_state.prior_steps_display = []
+        if not suggested_tables:
+             print(f"WARNING: The planner suggested tables ({', '.join(suggested_tables_raw)}), but none are available in the metadata for {DB_NAME}. Analysis might fail.", file=sys.stderr)
+             # Decide if you want to proceed or exit. For now, let's try proceeding.
+             # If proceeding without tables is impossible, uncomment the next lines:
+             # print("Cannot proceed without valid tables. Exiting.")
+             # sys.exit(1)
 
-            try:
-                with st.spinner("Generating analysis plan..."):
-                    # Call create_plan agent
-                    plan_result, suggested_tables = create_plan(question=question, metadata_string=metadata_string)
-                st.session_state.plan = plan_result
-                # Validate suggested tables against all available tables
-                valid_suggested = [t for t in suggested_tables if t in all_available_tables]
-                st.session_state.suggested_tables = valid_suggested
-                st.session_state.planning_complete = True
-                # No rerun needed here, the rest of the script will execute and show the next section
-
-            except Exception as e:
-                st.error(f"Error during planning phase: {e}")
-                st.error(traceback.format_exc())
-                st.session_state.planning_complete = False # Ensure flag is false on error
-        else:
-            st.warning("Please enter a question before planning.")
-
-# --- Table Confirmation and Execution Phase ---
-# This section appears only after the 'Plan Analysis' button has been successfully clicked
-if st.session_state.planning_complete:
-    st.markdown("---") # Visual separator
-    st.subheader("Table Selection Confirmation")
-    st.markdown("The analysis plan suggests using the tables below. Please confirm or adjust the selection for the analysis:")
-
-    # The multiselect widget manages its own state via the key
-    confirmed_tables = st.multiselect(
-        "Select tables to include in the analysis:",
-        options=all_available_tables,
-        default=st.session_state.suggested_tables, # Pre-select suggested tables
-        key="table_confirmation_multiselect" # Key to access the selection later
-    )
-
-    # Add the "Run Analysis" button within this conditional block
-    if st.button("Run Analysis with Selected Tables", key="run_analysis_button"):
-        selected_tables = st.session_state.table_confirmation_multiselect # Get current selection
-        if not selected_tables:
-            st.warning("Please select at least one table to run the analysis.")
-        else:
-            # --- Analysis Execution ---
-            st.info(f"Starting analysis using tables: `{'`, `'.join(selected_tables)}`")
-
-            # Create filtered metadata based on the user's confirmed selection
-            try:
-                filtered_metadata_dict = create_filtered_dict(metadata_dict, selected_tables, db_name=DB_NAME)
-            except Exception as e:
-                 st.error(f"Failed to filter metadata based on selection: {e}")
-                 st.stop()
-
-            # Initialize/reset state for the analysis run
-            prior_steps_list = []
-            current_new_data = {} # Use a local variable for the loop
-            analysis_plan = st.session_state.plan # Get the plan from session state
-            talk_to_user_flag = False
-            final_output = "Analysis could not be completed." # Default final message
-
-            # Clear previous steps display
-            st.session_state.prior_steps_display = []
-
-            try:
-                with st.spinner("Running analysis steps..."):
-                    # The main analysis loop
-                    while not talk_to_user_flag:
-                        # Call the run_analysis function for one step
-                        tool_called, output, current_new_data, step_description, analysis_plan = run_analysis(
-                            question,           # Pass the original question
-                            current_new_data,   # Pass the current data dictionary
-                            prior_steps_list,   # Pass the list of prior steps
-                            analysis_plan,      # Pass the current plan
-                            filtered_metadata_dict # Pass the user-filtered metadata
-                        )
-
-                        # Append step details for display
-                        prior_steps_list.append(step_description) # Keep track of textual steps
-                        step_info_for_display = {"step": step_description, "tool": tool_called}
-                        if tool_called == 'SQL Tool' and isinstance(output, dict):
-                             step_info_for_display["sql"] = output.get('SQL_Query')
-                        st.session_state.prior_steps_display.append(step_info_for_display)
+    except Exception as e:
+        print(f"\nERROR during planning phase: {e}", file=sys.stderr)
+        traceback.print_exc()
+        sys.exit(1) # Exit if planning fails
 
 
-                        # Check if the loop should terminate
-                        if tool_called == 'Talk with user Tool':
-                            talk_to_user_flag = True
-                            final_output = output # The output is the message string
+    # --- Analysis Execution (using suggested tables directly) ---
+    print(f"\n--- Starting Analysis Using Tables: {', '.join(suggested_tables)} ---")
 
-                # Store results in session state after the loop finishes successfully
-                st.session_state.analysis_results = final_output
-                st.session_state.new_data_results = current_new_data
-                # Optionally update the plan if it was modified: st.session_state.plan = analysis_plan
+    # Create filtered metadata based on the *suggested* selection
+    try:
+        filtered_metadata_dict = create_filtered_dict(metadata_dict, suggested_tables, db_name=DB_NAME)
+        # Optional: Print the filtered metadata being used
+        # print(f"\nFiltered Metadata for Analysis:\n{filtered_metadata_dict}")
+    except Exception as e:
+        print(f"\nERROR: Failed to filter metadata based on suggested tables: {e}", file=sys.stderr)
+        sys.exit(1)
 
-            except Exception as e:
-                # Error occurred during the loop execution
-                st.error(f"An error occurred during the analysis execution loop: {e}")
-                st.error(traceback.format_exc())
-                st.session_state.analysis_results = f"Analysis stopped due to error: {e}"
-                st.session_state.new_data_results = current_new_data # Store partial results if any
+    # Initialize state for the analysis run
+    prior_steps_list = []
+    current_new_data = {} # Stores generated dataframes {name: {'data_frame': df, ...}}
+    analysis_plan = plan # Use the plan generated earlier
+    talk_to_user_flag = False
+    final_output = "Analysis could not be completed." # Default final message
+    analysis_steps_details = [] # Store details like SQL for final summary
 
+    try:
+        print("\n--- Running Analysis Steps ---")
+        # The main analysis loop
+        while not talk_to_user_flag:
+            print(f"\nExecuting Step {len(prior_steps_list) + 1}...")
+            # Call the run_analysis function for one step
+            tool_called, output, current_new_data, step_description, analysis_plan = run_analysis(
+                question,              # Pass the original question
+                current_new_data,      # Pass the current data dictionary
+                prior_steps_list,      # Pass the list of prior steps descriptions
+                analysis_plan,         # Pass the current plan
+                filtered_metadata_dict,# Pass the filtered metadata
+                DB_NAME                # Pass the database name
+            )
 
-            # Rerun to display results sections now that they are populated
-            st.rerun()
+            # Store step details
+            step_info = {"step": step_description, "tool": tool_called}
+            if tool_called == 'SQL Tool' and isinstance(output, dict):
+                step_info["sql"] = output.get('SQL_Query')
+            analysis_steps_details.append(step_info)
 
+            # Append step description for the next iteration's input
+            prior_steps_list.append(step_description)
 
-# --- Results Display Section ---
+            # Print step summary to console
+            print(f"Step Description: {step_description}")
+            if step_info.get("sql"):
+                print(f"SQL Executed in step: \n{step_info['sql']}")
 
-# Display steps in the sidebar (reads from session state)
-with st.sidebar:
-    st.header("Analysis Steps")
-    if not st.session_state.prior_steps_display:
-        st.write("No analysis steps executed yet.")
+            # Check if the loop should terminate
+            if tool_called == 'Talk with user Tool':
+                talk_to_user_flag = True
+                final_output = output # The output is the message string from talk_with_user_agent or an error
+
+        # --- Analysis Finished ---
+        print("\n--- Analysis Loop Completed ---")
+
+    except Exception as e:
+        # Error occurred during the loop execution
+        print(f"\nFATAL ERROR during the analysis execution loop: {e}", file=sys.stderr)
+        traceback.print_exc()
+        final_output = f"Analysis stopped due to error: {e}"
+        # Keep partial results stored in current_new_data and analysis_steps_details
+
+    # --- Results Display Section ---
+    print("\n\n========================================")
+    print("         ANALYSIS RESULTS")
+    print("========================================")
+
+    # Display steps executed
+    print("\n--- Analysis Steps Executed ---")
+    if not analysis_steps_details:
+        print("No analysis steps were executed.")
     else:
-        for i, item in enumerate(st.session_state.prior_steps_display):
-            st.write(item.get("step", f"Step {i+1} details missing"))
+        for item in analysis_steps_details:
+            print(item.get("step", "Step details missing"))
             if item.get("tool") == 'SQL Tool' and item.get("sql"):
-                st.code(item["sql"], language="sql")
-            st.markdown("---") # Separator
+                print(f"  SQL Query:\n{item['sql']}")
+            print("-" * 20) # Separator
 
-# Display final message and dataframes in the main area if results exist
-if st.session_state.analysis_results:
-    st.markdown("---")
-    st.subheader("Analysis Result")
-    st.markdown(st.session_state.analysis_results) # Display the final message
+    # Display final message
+    print("\n--- Final Analysis Result ---")
+    print(final_output) # Display the final message
 
-    # Find and display dataframe previews and download buttons
-    # Use the stored new_data_results from session state
-    generated_data = st.session_state.new_data_results
-    matches = re.findall(r'\[\[(.*?)\]\]', st.session_state.analysis_results) # Find [[df_name]] mentions
+    # Find and display dataframe previews
+    print("\n--- Generated DataFrames (if any) ---")
+    generated_data = current_new_data
+    matches = re.findall(r'\[\[(.*?)\]\]', final_output) # Find [[df_name]] mentions in the *final* output
     displayed_dfs = set()
 
-    if matches:
-        st.subheader("Generated DataFrames")
+    if not generated_data:
+        print("No DataFrames were generated during the analysis.")
+    elif not matches:
+        print("Final result message does not explicitly mention any DataFrames ([[df_name]]).")
+        # Optional: List all generated DFs anyway
+        print("Listing all generated DataFrames:")
+        for name, df_info in generated_data.items():
+             df = df_info.get('data_frame')
+             if isinstance(df, pd.DataFrame):
+                  print(f"\n** DataFrame: `{name}` ** (Preview)")
+                  print(df.head().to_string()) # Print head() to console
+                  displayed_dfs.add(name)
+    else:
+        # Process DFs mentioned in the final output
+        print("Displaying DataFrames mentioned in the final result:")
         for name in matches:
             name = name.strip() # Clean whitespace
             if name in generated_data and name not in displayed_dfs:
@@ -263,30 +263,34 @@ if st.session_state.analysis_results:
                 df = df_info.get('data_frame')
 
                 if isinstance(df, pd.DataFrame):
-                    st.write(f"**DataFrame: `{name}`** (Preview)")
-                    st.dataframe(df.head(), use_container_width=True)
-
-                    csv_data = convert_df_to_csv(df) # Use the cached function
-                    if csv_data:
-                        try:
-                            st.download_button(
-                                label=f"Download `{name}` as CSV",
-                                data=csv_data,
-                                file_name=f"{name}.csv",
-                                mime='text/csv',
-                                key=f"download_{name}_{len(csv_data)}" # Make key potentially unique based on data
-                            )
-                        except Exception as e:
-                            st.error(f"Error creating download button for {name}: {e}")
-
+                    print(f"\n** DataFrame: `{name}` ** (Preview)")
+                    # Print DataFrame head to console using to_string() for better formatting
+                    try:
+                        print(df.head().to_string())
+                    except Exception as df_print_err:
+                         print(f"  Could not print preview for {name}: {df_print_err}")
                     displayed_dfs.add(name) # Mark as displayed
                 else:
-                     st.warning(f"Data for `[[{name}]]` found but is not a valid DataFrame.")
-                     displayed_dfs.add(name) # Avoid re-warning
+                    print(f"\nWARNING: Data for `[[{name}]]` found but is not a valid DataFrame.")
+                    displayed_dfs.add(name) # Avoid re-warning
 
             elif name not in generated_data and name not in displayed_dfs:
                 # Only warn if mentioned but not found AND not already warned about
-                st.warning(f"DataFrame `[[{name}]]` mentioned in the result but was not found in the generated data.")
+                print(f"\nWARNING: DataFrame `[[{name}]]` mentioned in the result but was not found in the generated data.")
                 displayed_dfs.add(name) # Avoid re-warning
 
-# --- End of App ---
+        # Optional: Check if any generated DFs were *not* mentioned
+        unmentioned_dfs = set(generated_data.keys()) - displayed_dfs
+        if unmentioned_dfs:
+            print("\n--- Additional Generated DataFrames (not mentioned in final result) ---")
+            for name in unmentioned_dfs:
+                 df_info = generated_data[name]
+                 df = df_info.get('data_frame')
+                 if isinstance(df, pd.DataFrame):
+                    print(f"\n** DataFrame: `{name}` ** (Preview)")
+                    try:
+                         print(df.head().to_string())
+                    except Exception as df_print_err:
+                         print(f"  Could not print preview for {name}: {df_print_err}")
+
+    print("\n--- End of Execution ---")
