@@ -5,7 +5,7 @@ from agents.sql_agent import sql_agent
 from agents.talk_with_user_agent import talk_with_user_agent
 from agents.update_plan import update_plan
 from agents.create_plan import create_plan
-from utils.unique import metadata_str_into_dict, create_filtered_dict, format_dict_info
+from utils.unique import metadata_str_into_dict
 import re
 import traceback # For better error reporting
 
@@ -33,8 +33,9 @@ try:
     with open('agents/prompts/metadata.txt', 'r') as file:
         metadata_string = file.read() # Keep the raw string for create_plan
         metadata_dict = metadata_str_into_dict(metadata_string)
+
         # Get all available tables for the database
-        all_available_tables = list(metadata_dict.get(DB_NAME, {}).keys())
+        all_available_tables = list(metadata_dict.keys())
         if not all_available_tables:
              st.warning(f"No tables found in metadata for database: {DB_NAME}")
 except FileNotFoundError:
@@ -71,14 +72,10 @@ def run_analysis(question, new_data, prior_steps, plan, filtered_dict):
             return tool_to_call, step_output, new_data, step, plan # Return user message directly
 
         elif tool_to_call == 'SQL Tool':
-            # Ensure metadata for the specific DB is passed correctly
-            db_metadata = filtered_dict.get(DB_NAME, {})
-            if not db_metadata:
-                 raise ValueError(f"No metadata found for database '{DB_NAME}' in the filtered dictionary.")
 
             ai_output, new_data = sql_agent(
                 instructions,
-                metadata = db_metadata,
+                metadata = filtered_dict,
                 database_name = DB_NAME,
                 new_data = new_data # Pass and potentially update new_data dict
             )
@@ -129,7 +126,7 @@ with col1:
             try:
                 with st.spinner("Generating analysis plan..."):
                     # Call create_plan agent
-                    plan_result, suggested_tables = create_plan(question=question, metadata_string=metadata_string)
+                    plan_result, suggested_tables = create_plan(question=question, metadata=metadata_dict)
                 st.session_state.plan = plan_result['Plan']
                 # Validate suggested tables against all available tables
                 valid_suggested = [t for t in suggested_tables if t in all_available_tables]
@@ -170,7 +167,7 @@ if st.session_state.planning_complete:
 
             # Create filtered metadata based on the user's confirmed selection
             try:
-                filtered_metadata_dict = create_filtered_dict(metadata_dict, selected_tables, db_name=DB_NAME)
+                filtered_metadata_dict = {table: metadata_dict[table] for table in selected_tables if table in metadata_dict}
             except Exception as e:
                  st.error(f"Failed to filter metadata based on selection: {e}")
                  st.stop()
@@ -223,6 +220,7 @@ if st.session_state.planning_complete:
                 st.error(f"An error occurred during the analysis execution loop: {e}")
                 st.error(traceback.format_exc())
                 st.session_state.analysis_results = f"Analysis stopped due to error: {e}"
+                raise e
                 st.session_state.new_data_results = current_new_data # Store partial results if any
 
 
