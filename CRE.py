@@ -26,7 +26,8 @@ if 'new_data_results' not in st.session_state:
       st.session_state.new_data_results = {} # Stores generated dataframes {name: {'data_frame': df, ...}}
 if 'prior_steps_display' not in st.session_state:
     st.session_state.prior_steps_display = [] # Stores steps for sidebar display
-if 'user_question_input' not in st.session_state: # Ensure question persists across reruns
+# Initialize user question state ONCE
+if 'user_question_input' not in st.session_state:
     st.session_state.user_question_input = ""
 
 # --- Load Metadata ---
@@ -50,6 +51,7 @@ except Exception as e:
 
 # --- Function Definitions ---
 
+# run_analysis function remains the same as before
 def run_analysis(question, new_data, prior_steps, plan, filtered_dict):
     """Runs a single step of the analysis using the orchestrator and appropriate tool."""
     try:
@@ -85,18 +87,21 @@ def run_analysis(question, new_data, prior_steps, plan, filtered_dict):
             step = f"STEP {len(prior_steps) + 1}. [{tool_to_call}]: '{instructions}' | OUTPUT DataFrame: {df_name}"
             # Update the plan
             # Ensure prior_steps + [step] is passed correctly if update_plan expects a list
-            updated_plan = update_plan(prior_steps=prior_steps + [step], current_plan=plan)
+            updated_plan_result = update_plan(prior_steps=prior_steps + [step], current_plan=plan)
 
 
             # Store SQL query for display if available
             sql_query = ai_output.get('SQL_Query', None)
-            return tool_to_call, {'df_name': df_name, 'SQL_Query': sql_query}, new_data, step, updated_plan['Plan'] # Make sure to return the updated plan string
+            # Make sure to return the updated plan string, handle potential None from update_plan
+            current_plan_str = updated_plan_result.get('Plan', plan) if isinstance(updated_plan_result, dict) else plan
+            return tool_to_call, {'df_name': df_name, 'SQL_Query': sql_query}, new_data, step, current_plan_str
 
     except Exception as e:
         st.error(f"Error during analysis step: {e}")
         st.error(traceback.format_exc())
         # Re-raise or return an error indicator to stop the loop gracefully
         raise e # Or return a specific error state
+
 
 # Caching the CSV conversion function
 @st.cache_data
@@ -112,18 +117,19 @@ def convert_df_to_csv(df):
 # --- Streamlit App UI ---
 st.title("CRE Database Chat")
 
-# Main area for user input - Use session state to preserve across reruns
-question = st.text_area("Enter your question:", key="user_question_input", value=st.session_state.user_question_input)
+# Main area for user input - The widget updates st.session_state.user_question_input directly
+st.text_area("Enter your question:", key="user_question_input")
 
 # --- Planning Phase ---
 col1, col2 = st.columns([1, 3]) # Adjust column widths as needed
 
 with col1:
     if st.button("Plan Analysis", key="plan_button"):
-        if question:
-             # Store the question in session state when planning starts
-            st.session_state.user_question_input = question
-            # Reset state for a new planning action
+        # Read the question directly from session state (updated by the widget)
+        current_question = st.session_state.user_question_input
+        if current_question:
+            # DO NOT assign back: st.session_state.user_question_input = current_question # REMOVED THIS LINE
+            # Reset other state variables for a new planning action
             st.session_state.planning_complete = False
             st.session_state.analysis_results = None
             st.session_state.new_data_results = {}
@@ -132,7 +138,7 @@ with col1:
             try:
                 with st.spinner("Generating analysis plan..."):
                     # Call create_plan agent using the full metadata initially
-                    plan_result, suggested_tables = create_plan(question=question, metadata=metadata_dict)
+                    plan_result, suggested_tables = create_plan(question=current_question, metadata=metadata_dict) # Use current_question
                 st.session_state.plan = plan_result['Plan']
                 # Validate suggested tables against all available tables
                 valid_suggested = [t for t in suggested_tables if t in all_available_tables]
@@ -157,7 +163,8 @@ if st.session_state.planning_complete:
 
     # The multiselect widget manages its own state via the key
     # Use st.session_state.suggested_tables for the default value
-    confirmed_tables = st.multiselect(
+    # The selection made by the user is stored in st.session_state.table_confirmation_multiselect
+    st.multiselect(
         "Select tables to include in the analysis:",
         options=all_available_tables,
         default=st.session_state.suggested_tables, # Pre-select suggested tables
@@ -166,7 +173,8 @@ if st.session_state.planning_complete:
 
     # Add the "Run Analysis" button within this conditional block
     if st.button("Run Analysis with Selected Tables", key="run_analysis_button"):
-        selected_tables = st.session_state.table_confirmation_multiselect # Get current selection from the widget's state
+        # Get the user's selection directly from the widget's state
+        selected_tables = st.session_state.table_confirmation_multiselect
 
         if not selected_tables:
             st.warning("Please select at least one table to run the analysis.")
@@ -204,10 +212,10 @@ if st.session_state.planning_complete:
                             # Call the run_analysis function for one step
                             # Ensure the current question from session state is used
                             tool_called, output, current_new_data, step_description, analysis_plan = run_analysis(
-                                st.session_state.user_question_input,  # Use question from session state
+                                st.session_state.user_question_input,  # Read question from session state
                                 current_new_data,    # Pass the current data dictionary
                                 prior_steps_list,    # Pass the list of prior steps
-                                analysis_plan,       # Pass the current plan
+                                analysis_plan,       # Pass the current plan (gets updated in loop)
                                 filtered_metadata_dict # Pass the user-filtered metadata
                             )
 
@@ -225,8 +233,8 @@ if st.session_state.planning_complete:
                             if tool_called == 'Talk with user Tool':
                                 talk_to_user_flag = True
                                 final_output = output # The output is the message string
-                            # Update plan in session state if it changed (optional, depends if run_analysis modifies it persistently)
-                            # st.session_state.plan = analysis_plan
+                            # Update plan in session state if it was modified (optional, depending on how update_plan works)
+                            # st.session_state.plan = analysis_plan # Consider if needed persistently
 
                         if step_counter >= max_steps:
                              final_output = "Analysis stopped after reaching the maximum step limit."
@@ -248,7 +256,9 @@ if st.session_state.planning_complete:
                     # Don't rerun on error, let user see the error message
 
                 # Rerun ONLY if analysis completed (or max steps hit) without runtime errors to display results
-                if 'e' not in locals(): # Check if exception variable 'e' exists in local scope
+                # Use a flag or check if 'e' was defined in the try block
+                analysis_error_occurred = 'e' in locals()
+                if not analysis_error_occurred:
                     st.rerun()
 
             else:
@@ -264,9 +274,9 @@ if st.session_state.planning_complete:
                     else:
                          with st.spinner("Re-generating analysis plan..."):
                              # Call create_plan agent AGAIN with the filtered metadata
-                             # Ensure the current question from session state is used
+                             # Read the question directly from session state
                              new_plan_result, new_suggested_tables = create_plan(
-                                 question=st.session_state.user_question_input, # Use question from session state
+                                 question=st.session_state.user_question_input, # Read from state
                                  metadata=filtered_metadata_dict_for_replanning # Use filtered metadata
                              )
 
@@ -332,12 +342,14 @@ if st.session_state.analysis_results:
                     csv_data = convert_df_to_csv(df) # Use the cached function
                     if csv_data:
                         try:
+                            # Use a more robust unique key including potentially dataframe hash or length
+                            df_hash = pd.util.hash_pandas_object(df).sum()
                             st.download_button(
                                 label=f"Download `{name}` as CSV",
                                 data=csv_data,
                                 file_name=f"{name}.csv",
                                 mime='text/csv',
-                                key=f"download_{name}_{len(csv_data)}" # Make key potentially unique based on data
+                                key=f"download_{name}_{df_hash}" # Make key unique
                             )
                         except Exception as e:
                             st.error(f"Error creating download button for {name}: {e}")
